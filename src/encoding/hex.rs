@@ -5,17 +5,12 @@ use crate::error::{Error, Result};
 const HEX_LOWER: &[u8] = b"0123456789abcdef";
 const HEX_UPPER: &[u8] = b"0123456789ABCDEF";
 
-fn nibbles(byte: u8) -> (u8, u8) {
-    (byte >> 4, byte & 0b1111)
-}
-
 pub fn encode(bytes: &[u8]) -> String {
     let mut hex = String::with_capacity(bytes.len() * 2);
-    (0..bytes.len()).for_each(|i| {
-        let (n1, n2) = nibbles(bytes[i]);
-        hex.push(HEX_LOWER[n1 as usize] as char);
-        hex.push(HEX_LOWER[n2 as usize] as char);
-    });
+    for i in 0..bytes.len() {
+        hex.push(HEX_LOWER[(bytes[i] >> 4) as usize] as char);
+        hex.push(HEX_LOWER[(bytes[i] & 0b1111) as usize] as char);
+    }
     hex
 }
 pub fn decode(hex: &str) -> Result<Vec<u8>> {
@@ -30,15 +25,15 @@ pub fn decode(hex: &str) -> Result<Vec<u8>> {
         hex_map.insert(HEX_UPPER[i] as char, i as u8);
     }
 
-    let mut bytes = vec![0; hex.len() / 2];
+    let mut bytes = Vec::with_capacity(hex.len() / 2);
 
     let mut b = 0;
-    for (idx, ch) in hex.chars().enumerate() {
+    for (idx, ch) in hex.char_indices() {
         if let Some(&v) = hex_map.get(&ch) {
             b = (b << 4) | v;
 
             if idx % 2 != 0 {
-                bytes[idx / 2] = b;
+                bytes.push(b);
                 b = 0;
             }
         } else {

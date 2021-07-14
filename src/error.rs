@@ -6,6 +6,7 @@ pub enum Error {
     InvalidBase64Length(usize),
     XorInconsistentLengths(usize, usize),
     XorEmptyKey,
+    IncorrectKeyLength { expected: usize, actual: usize },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

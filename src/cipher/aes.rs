@@ -65,6 +65,7 @@ const WORD_SIZE: usize = 4;
 const BLOCK_SIZE: usize = 4;
 const BLOCK_SIZE_BYTES: usize = BLOCK_SIZE * WORD_SIZE;
 
+#[derive(PartialEq)]
 pub enum AesMode {
     Ecb,
     Cbc { iv: [u8; 16] },
@@ -99,22 +100,25 @@ impl Aes {
             prev_block.copy_from_slice(&iv)
         }
 
-        let mut current_block = [0; BLOCK_SIZE_BYTES];
+        let mut current_block = vec![0; BLOCK_SIZE_BYTES];
         for block in 0..num_blocks {
             current_block.copy_from_slice(
                 &data[block * BLOCK_SIZE_BYTES..((block + 1) * BLOCK_SIZE_BYTES).min(data.len())],
             );
 
-            if block + 1 == num_blocks {
-                let remainder = data.len() % BLOCK_SIZE_BYTES;
-                let padding_start = BLOCK_SIZE_BYTES - remainder;
+            match self.mode {
+                AesMode::Cbc { .. } => {
+                    for i in 0..BLOCK_SIZE_BYTES {
+                        current_block[i] ^= prev_block[i];
+                    }
+                }
+                AesMode::Ecb => {
+                    if block + 1 == num_blocks {
+                        let remainder = data.len() % BLOCK_SIZE_BYTES;
+                        let start = BLOCK_SIZE_BYTES - remainder;
 
-                self.padding.pad(&mut current_block[padding_start..]);
-            }
-
-            if let AesMode::Cbc { .. } = self.mode {
-                for i in 0..BLOCK_SIZE_BYTES {
-                    current_block[i] ^= prev_block[i];
+                        self.padding.pad(&mut current_block[start..]);
+                    }
                 }
             }
 
@@ -147,10 +151,11 @@ impl Aes {
             self.decrypt_block(&mut current_block);
 
             if let AesMode::Cbc { .. } = self.mode {
-                for i in 0..BLOCK_SIZE_BYTES {
-                    current_block[i] ^= prev_block[i];
-                }
-            }
+                current_block
+                    .iter_mut()
+                    .zip(prev_block.iter())
+                    .for_each(|(c, p)| *c ^= *p);
+            };
 
             prev_block.copy_from_slice(&current_block);
             dest[block * BLOCK_SIZE_BYTES..(block + 1) * BLOCK_SIZE_BYTES]
@@ -265,7 +270,7 @@ pub fn ffm(mut b0: u8, mut b1: u8) -> u8 {
             p ^= b0;
         }
         if b0 & 0x80 != 0 {
-            b0 = (((b0 as u16) << 1) ^ 0x11b) as u8;
+            b0 = (b0 << 1) ^ 0x1b;
         } else {
             b0 <<= 1;
         }
@@ -273,6 +278,19 @@ pub fn ffm(mut b0: u8, mut b1: u8) -> u8 {
     }
 
     p
+}
+
+pub fn pad(data: &mut Vec<u8>, block_size: usize, padding: &AesPadding) {
+    let remainder = data.len() % block_size;
+
+    if remainder > 0 {
+        let start = data.len();
+        let end = data.len() - remainder + block_size;
+
+        data.resize(end, 0);
+
+        padding.pad(&mut data[start..]);
+    }
 }
 
 pub enum AesKeyStandard {

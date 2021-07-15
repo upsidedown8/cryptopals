@@ -342,6 +342,7 @@ pub fn pad(data: &mut Vec<u8>, block_size: usize, padding: &AesPadding) {
     }
 }
 
+#[derive(Clone, Copy)]
 pub enum AesKeyStandard {
     AES128,
     AES192,
@@ -358,6 +359,7 @@ impl AesKeyStandard {
     }
 }
 
+#[derive(Clone)]
 pub struct AesKey {
     key_standard: AesKeyStandard,
     data: Vec<u8>,
@@ -475,10 +477,10 @@ pub fn encryption_oracle(input: &[u8]) -> Vec<u8> {
     aes.encrypt(&plaintext)
 }
 
-pub fn keyed_ecb_encryption_oracle(input: &[u8], key: &[u8]) -> Vec<u8> {
+pub fn keyed_ecb_encryption_oracle(input: &[u8], key: &AesKey) -> Vec<u8> {
     let aes = Aes {
         mode: AesMode::Ecb,
-        key: AesKey::new(AesKeyStandard::AES128, key).unwrap(),
+        key: key.clone(),
         padding: AesPadding::PKCS7,
     };
 
@@ -500,7 +502,7 @@ pub fn keyed_ecb_encryption_oracle(input: &[u8], key: &[u8]) -> Vec<u8> {
     aes.encrypt(&plaintext)
 }
 
-pub fn determine_block_size(key: &[u8]) -> (usize, usize) {
+pub fn determine_block_size(key: &AesKey) -> (usize, usize) {
     let initial_len = keyed_ecb_encryption_oracle(&[], key).len();
 
     let mut num_bytes = 1;
@@ -516,7 +518,7 @@ pub fn determine_block_size(key: &[u8]) -> (usize, usize) {
 }
 
 // the key is only used for the oracle function
-pub fn byte_at_a_time_ecb(key: &[u8]) -> Vec<u8> {
+pub fn byte_at_a_time_ecb(key: &AesKey) -> Vec<u8> {
     let (bs, max_secret_len) = determine_block_size(key);
 
     let mut secret = vec![];

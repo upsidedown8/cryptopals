@@ -1,3 +1,4 @@
+use cryptopals::cipher::aes::AesKey;
 use rand::RngCore;
 
 #[test]
@@ -57,8 +58,9 @@ fn challenge12() {
     use cryptopals::cipher::aes;
     use cryptopals::encoding::base64;
 
-    let mut key = vec![0; 16];
-    rand::thread_rng().fill_bytes(&mut key);
+    let mut key_data = vec![0; 16];
+    rand::thread_rng().fill_bytes(&mut key_data);
+    let key = AesKey::new(aes::AesKeyStandard::AES128, &key_data).unwrap();
 
     let expected_b64 = "Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkgaGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBqdXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUgYnkK";
 

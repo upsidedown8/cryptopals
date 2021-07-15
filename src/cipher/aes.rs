@@ -157,7 +157,8 @@ impl Aes {
                     .for_each(|(c, p)| *c ^= *p);
             };
 
-            prev_block.copy_from_slice(&current_block);
+            prev_block
+                .copy_from_slice(&data[block * BLOCK_SIZE_BYTES..(block + 1) * BLOCK_SIZE_BYTES]);
             dest[block * BLOCK_SIZE_BYTES..(block + 1) * BLOCK_SIZE_BYTES]
                 .copy_from_slice(&current_block);
         }

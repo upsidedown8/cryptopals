@@ -1,3 +1,8 @@
+use rand::{
+    distributions::{Distribution, Standard},
+    Rng, RngCore,
+};
+
 use crate::error::{Error, Result};
 
 // round constants
@@ -71,6 +76,21 @@ pub enum AesMode {
     Cbc { iv: [u8; 16] },
 }
 
+impl Distribution<AesMode> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> AesMode {
+        match rng.gen_range(0..2) {
+            0 => AesMode::Ecb,
+            _ => {
+                let mut iv = [0; 16];
+
+                rng.fill_bytes(&mut iv);
+
+                AesMode::Cbc { iv }
+            }
+        }
+    }
+}
+
 pub enum AesPadding {
     PKCS7,
 }
@@ -87,6 +107,31 @@ pub struct Aes {
     pub padding: AesPadding,
     pub mode: AesMode,
     pub key: AesKey,
+}
+
+impl Distribution<Aes> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Aes {
+        Aes {
+            key: {
+                let bytes = AesKeyStandard::AES128.key_size() * WORD_SIZE;
+                let mut data = vec![0; bytes];
+
+                rand::thread_rng().fill_bytes(&mut data);
+
+                let mut result = AesKey {
+                    key_standard: AesKeyStandard::AES128,
+                    data,
+                    round_keys: vec![],
+                };
+
+                result.round_keys = result.round_keys();
+
+                result
+            },
+            mode: rng.gen(),
+            padding: AesPadding::PKCS7,
+        }
+    }
 }
 
 impl Aes {
@@ -408,6 +453,40 @@ impl AesKey {
         let y = b % 16;
         S_BOX[x as usize][y as usize]
     }
+}
+
+pub fn encryption_oracle(input: &[u8]) -> Vec<u8> {
+    use crate::cipher::aes;
+
+    let count_before = rand::thread_rng().gen_range(5..=10);
+    let count_after = rand::thread_rng().gen_range(5..=10);
+
+    let aes: aes::Aes = rand::thread_rng().gen();
+
+    let mut plaintext = vec![0; count_before + input.len() + count_after];
+
+    plaintext[count_before..count_before + input.len()].copy_from_slice(input);
+    rand::thread_rng().fill_bytes(&mut plaintext[0..count_before]);
+    rand::thread_rng().fill_bytes(&mut plaintext[count_before + input.len()..]);
+
+    aes.encrypt(&plaintext)
+}
+
+pub fn is_ecb(input: &[u8]) -> bool {
+    let mut set = std::collections::HashSet::new();
+
+    for block in 0..input.len() / BLOCK_SIZE_BYTES {
+        let key = crate::encoding::hex::encode(
+            &input[block * BLOCK_SIZE_BYTES..(block + 1) * BLOCK_SIZE_BYTES],
+        );
+
+        if set.contains(&key) {
+            return true;
+        }
+        set.insert(key);
+    }
+
+    false
 }
 
 #[cfg(test)]

@@ -34,3 +34,18 @@ fn challenge10() {
 
     assert_eq!(expected_b64, base64::encode(&decryption));
 }
+
+#[test]
+fn challenge11() {
+    use cryptopals::cipher::aes;
+    use cryptopals::encoding::hex;
+
+    let ecb_data = hex::decode("01010101010101010101010101010101202020202020202020202020202020200101010101010101010101010101010120202020202020202020202020202020").unwrap();
+
+    assert!(aes::is_ecb(&ecb_data));
+
+    let not_ecb_data =
+        hex::decode("0101010101010101010101010101010120202020202020202020202020202020").unwrap();
+
+    assert!(!aes::is_ecb(&not_ecb_data));
+}

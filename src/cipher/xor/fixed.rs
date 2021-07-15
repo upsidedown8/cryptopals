@@ -12,11 +12,5 @@ fn check_length(data: &[u8], key: &[u8]) -> Result<()> {
 pub fn run(data: &[u8], key: &[u8]) -> Result<Vec<u8>> {
     check_length(data, key)?;
 
-    let mut encrypted = vec![0; data.len()];
-
-    for i in 0..data.len() {
-        encrypted[i] = data[i] ^ key[i];
-    }
-
-    Ok(encrypted)
+    Ok(data.iter().zip(key.iter()).map(|(d, k)| *d ^ *k).collect())
 }

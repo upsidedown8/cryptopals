@@ -6,13 +6,9 @@ pub fn run(data: &[u8], key: &[u8]) -> Result<Vec<u8>> {
         return Err(Error::XorEmptyKey);
     }
 
-    let mut encrypted = vec![0; data.len()];
-
-    for i in 0..data.len() {
-        encrypted[i] = data[i] ^ key[i % key.len()];
-    }
-
-    Ok(encrypted)
+    Ok((0..data.len())
+        .map(|i| data[i] ^ key[i % key.len()])
+        .collect())
 }
 
 pub fn solve(data: &[u8]) -> Vec<u8> {

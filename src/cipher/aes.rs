@@ -162,10 +162,8 @@ impl Aes {
                 }
                 AesMode::Ecb => {
                     if block + 1 == num_blocks {
-                        let remainder = data.len() % BLOCK_SIZE_BYTES;
-                        let start = BLOCK_SIZE_BYTES - remainder;
-
-                        self.padding.pad(&mut current_block[start..]);
+                        self.padding
+                            .pad(&mut current_block[data.len() % BLOCK_SIZE_BYTES..]);
                     }
                 }
             }
@@ -210,6 +208,12 @@ impl Aes {
             dest[block * BLOCK_SIZE_BYTES..(block + 1) * BLOCK_SIZE_BYTES]
                 .copy_from_slice(&current_block);
         }
+
+        let padding = (1..16)
+            .take_while(|i| dest[dest.len() - i] == b'\x04')
+            .count();
+
+        dest.resize(dest.len() - padding, 0);
 
         Ok(dest)
     }
@@ -510,7 +514,7 @@ pub fn determine_block_size(key: &AesKey) -> (usize, usize) {
         let block_len = keyed_ecb_encryption_oracle(&vec![0; num_bytes], key).len();
 
         if block_len > initial_len {
-            return (block_len - initial_len, initial_len - num_bytes + 1);
+            return (block_len - initial_len, initial_len - num_bytes);
         }
 
         num_bytes += 1;

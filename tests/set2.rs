@@ -1,3 +1,5 @@
+use rand::RngCore;
+
 #[test]
 fn challenge9() {
     use cryptopals::cipher::aes;
@@ -48,4 +50,17 @@ fn challenge11() {
         hex::decode("0101010101010101010101010101010120202020202020202020202020202020").unwrap();
 
     assert!(!aes::is_ecb(&not_ecb_data));
+}
+
+#[test]
+fn challenge12() {
+    use cryptopals::cipher::aes;
+    use cryptopals::encoding::base64;
+
+    let mut key = vec![0; 16];
+    rand::thread_rng().fill_bytes(&mut key);
+
+    let expected_b64 = "Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkgaGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBqdXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUgYnkK";
+
+    assert_eq!(base64::encode(&aes::byte_at_a_time_ecb(&key)), expected_b64);
 }

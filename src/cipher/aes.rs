@@ -147,9 +147,12 @@ impl Aes {
 
         let mut current_block = vec![0; BLOCK_SIZE_BYTES];
         for block in 0..num_blocks {
-            current_block.copy_from_slice(
-                &data[block * BLOCK_SIZE_BYTES..((block + 1) * BLOCK_SIZE_BYTES).min(data.len())],
-            );
+            for i in 0..16 {
+                if block * BLOCK_SIZE_BYTES + i >= data.len() {
+                    break;
+                }
+                current_block[i] = data[block * BLOCK_SIZE_BYTES + i];
+            }
 
             match self.mode {
                 AesMode::Cbc { .. } => {
@@ -470,6 +473,88 @@ pub fn encryption_oracle(input: &[u8]) -> Vec<u8> {
     rand::thread_rng().fill_bytes(&mut plaintext[count_before + input.len()..]);
 
     aes.encrypt(&plaintext)
+}
+
+pub fn keyed_ecb_encryption_oracle(input: &[u8], key: &[u8]) -> Vec<u8> {
+    let aes = Aes {
+        mode: AesMode::Ecb,
+        key: AesKey::new(AesKeyStandard::AES128, key).unwrap(),
+        padding: AesPadding::PKCS7,
+    };
+
+    let secret = crate::encoding::base64::decode(
+        r#"
+        Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkg
+        aGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBq
+        dXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUg
+        YnkK
+    "#,
+    )
+    .unwrap();
+
+    let mut plaintext = vec![0; input.len() + secret.len()];
+
+    plaintext[0..input.len()].copy_from_slice(&input);
+    plaintext[input.len()..].copy_from_slice(&secret);
+
+    aes.encrypt(&plaintext)
+}
+
+pub fn determine_block_size(key: &[u8]) -> (usize, usize) {
+    let initial_len = keyed_ecb_encryption_oracle(&[], key).len();
+
+    let mut num_bytes = 1;
+    loop {
+        let block_len = keyed_ecb_encryption_oracle(&vec![0; num_bytes], key).len();
+
+        if block_len > initial_len {
+            return (block_len - initial_len, initial_len - num_bytes + 1);
+        }
+
+        num_bytes += 1;
+    }
+}
+
+// the key is only used for the oracle function
+pub fn byte_at_a_time_ecb(key: &[u8]) -> Vec<u8> {
+    let (bs, max_secret_len) = determine_block_size(key);
+
+    let mut secret = vec![];
+
+    assert!(is_ecb(&keyed_ecb_encryption_oracle(&vec![0; 2 * bs], key)));
+
+    while secret.len() < max_secret_len {
+        let secret_len = secret.len();
+        let block = secret_len / 16;
+
+        // create a block of (15 - (the known chars)) zeros
+        let input_block = vec![0; bs - 1 - (secret_len % 16)];
+        let target_block =
+            &keyed_ecb_encryption_oracle(&input_block, key)[block * bs..(block + 1) * bs];
+
+        // create a full block to test
+        let mut working_block = vec![0u8; bs];
+        // fill in the known data
+        working_block[bs - 1 - secret_len.min(15)..bs - 1]
+            .copy_from_slice(&secret[secret_len - secret_len.min(15)..]);
+        // try all possible final bytes
+        for b in 0..=255 {
+            working_block[bs - 1] = b;
+
+            let query_block = keyed_ecb_encryption_oracle(&working_block, key);
+
+            if target_block[0..bs]
+                .iter()
+                .zip(query_block.iter())
+                .all(|(x, y)| *x == *y)
+            {
+                secret.push(b);
+                break;
+            }
+        }
+    }
+
+    secret
 }
 
 pub fn is_ecb(input: &[u8]) -> bool {

@@ -74,6 +74,14 @@ pub enum AesPadding {
     PKCS7,
 }
 
+impl AesPadding {
+    pub fn pad(&self, slice: &mut [u8]) {
+        match *self {
+            AesPadding::PKCS7 => slice.fill(b'\x04'),
+        }
+    }
+}
+
 pub struct Aes {
     pub padding: AesPadding,
     pub mode: AesMode,
@@ -82,27 +90,86 @@ pub struct Aes {
 
 impl Aes {
     pub fn encrypt(&self, data: &[u8]) -> Vec<u8> {
-        vec![]
+        let len = data.len() as f64;
+        let num_blocks = (len / (BLOCK_SIZE_BYTES as f64)).ceil() as usize;
+
+        let mut dest = vec![0; BLOCK_SIZE_BYTES * num_blocks];
+        let mut prev_block = [0; BLOCK_SIZE_BYTES];
+        if let AesMode::Cbc { iv } = self.mode {
+            prev_block.copy_from_slice(&iv)
+        }
+
+        let mut current_block = [0; BLOCK_SIZE_BYTES];
+        for block in 0..num_blocks {
+            current_block.copy_from_slice(
+                &data[block * BLOCK_SIZE_BYTES..((block + 1) * BLOCK_SIZE_BYTES).min(data.len())],
+            );
+
+            if block + 1 == num_blocks {
+                let remainder = data.len() % BLOCK_SIZE_BYTES;
+                let padding_start = BLOCK_SIZE_BYTES - remainder;
+
+                self.padding.pad(&mut current_block[padding_start..]);
+            }
+
+            if let AesMode::Cbc { .. } = self.mode {
+                for i in 0..BLOCK_SIZE_BYTES {
+                    current_block[i] ^= prev_block[i];
+                }
+            }
+
+            self.encrypt_block(&mut current_block);
+            prev_block.copy_from_slice(&current_block);
+            dest[block * BLOCK_SIZE_BYTES..(block + 1) * BLOCK_SIZE_BYTES]
+                .copy_from_slice(&current_block);
+        }
+
+        dest
     }
-    pub fn decrypt(&self, data: &[u8]) -> Vec<u8> {
-        vec![]
+    pub fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>> {
+        if data.len() % BLOCK_SIZE_BYTES != 0 {
+            return Err(Error::IncorrectInputLength(data.len()));
+        }
+
+        let num_blocks = data.len() / BLOCK_SIZE_BYTES;
+
+        let mut dest = vec![0; data.len()];
+        let mut prev_block = [0; BLOCK_SIZE_BYTES];
+        if let AesMode::Cbc { iv } = self.mode {
+            prev_block.copy_from_slice(&iv)
+        }
+
+        let mut current_block = [0; BLOCK_SIZE_BYTES];
+        for block in 0..num_blocks {
+            current_block
+                .copy_from_slice(&data[block * BLOCK_SIZE_BYTES..(block + 1) * BLOCK_SIZE_BYTES]);
+
+            self.decrypt_block(&mut current_block);
+
+            if let AesMode::Cbc { .. } = self.mode {
+                for i in 0..BLOCK_SIZE_BYTES {
+                    current_block[i] ^= prev_block[i];
+                }
+            }
+
+            prev_block.copy_from_slice(&current_block);
+            dest[block * BLOCK_SIZE_BYTES..(block + 1) * BLOCK_SIZE_BYTES]
+                .copy_from_slice(&current_block);
+        }
+
+        Ok(dest)
     }
 
-    fn encrypt_block(&self, block: &mut [u8]) {
+    pub fn encrypt_block(&self, block: &mut [u8]) {
         let mut state = self.fill_state(block);
 
         self.key.add_round_key(&mut state, 0);
 
         for round in 1..self.key.num_rounds() {
-            self.print_state(&state); //
             self.sub_bytes(&mut state, &S_BOX);
-            self.print_state(&state); //
             self.shift_rows(&mut state, false);
-            self.print_state(&state); //
             self.mix_columns(&mut state, &ENCRYPTION_MATRIX);
-            self.print_state(&state); //
             self.key.add_round_key(&mut state, round);
-            self.print_state(&state); //
         }
 
         self.sub_bytes(&mut state, &S_BOX);
@@ -111,7 +178,7 @@ impl Aes {
 
         self.fill_block(state, block);
     }
-    fn decrypt_block(&self, block: &mut [u8]) {
+    pub fn decrypt_block(&self, block: &mut [u8]) {
         let mut state = self.fill_state(block);
 
         self.key.add_round_key(&mut state, self.key.num_rounds());
@@ -123,7 +190,7 @@ impl Aes {
             self.mix_columns(&mut state, &DECRYPTION_MATRIX);
         }
 
-        self.shift_rows(&mut state, false);
+        self.shift_rows(&mut state, true);
         self.sub_bytes(&mut state, &S_BOX_INV);
         self.key.add_round_key(&mut state, 0);
 
@@ -132,35 +199,24 @@ impl Aes {
 
     fn sub_bytes(&self, state: &mut [[u8; 4]; 4], s_box: &[[u8; 16]; 16]) {
         for col in 0..4 {
-            for row in 0..4 {
+            (0..4).for_each(|row| {
                 state[row][col] = {
                     let x = state[row][col] / 16;
                     let y = state[row][col] % 16;
 
                     s_box[x as usize][y as usize]
                 }
-            }
+            });
         }
     }
     fn shift_rows(&self, state: &mut [[u8; 4]; 4], reverse: bool) {
-        for row in 0..4 {
-            let shift = if reverse { 4 - row } else { row };
-
-            for i in 0..gcd(shift, 4) {
-                let temp = state[row][i];
-
-                let mut j = i;
-                loop {
-                    let k = (j + shift) % 4;
-                    if k == i {
-                        break;
-                    }
-                    state[row][j] = state[row][k];
-                    j = k;
-                }
-                state[row][j] = temp;
+        (0..4).for_each(|row| {
+            if reverse {
+                state[row].rotate_right(row);
+            } else {
+                state[row].rotate_left(row);
             }
-        }
+        });
     }
     fn mix_columns(&self, state: &mut [[u8; 4]; 4], matrix: &[[u8; 4]; 4]) {
         let mut temp = [[0; 4]; 4];
@@ -183,7 +239,7 @@ impl Aes {
 
         for i in 0..4 {
             for j in 0..4 {
-                state[i][j] = data[i * 4 + j];
+                state[i][j] = data[j * 4 + i];
             }
         }
 
@@ -191,31 +247,12 @@ impl Aes {
     }
     fn fill_block(&self, state: [[u8; 4]; 4], out: &mut [u8]) {
         assert_eq!(out.len(), 16);
+
         for i in 0..4 {
             for j in 0..4 {
-                out[i * 4 + j] = state[i][j];
+                out[j * 4 + i] = state[i][j];
             }
         }
-    }
-
-    fn print_state(&self, state: &[[u8; 4]; 4]) {
-        let mut data = vec![];
-
-        state.iter().for_each(|x| {
-            let mut vec = vec![x[0], x[1], x[2], x[3]];
-
-            data.append(&mut vec);
-        });
-
-        println!("{}", crate::encoding::hex::encode(&data));
-    }
-}
-
-pub fn gcd(a: usize, b: usize) -> usize {
-    if b == 0 {
-        a
-    } else {
-        gcd(b, a % b)
     }
 }
 
@@ -262,11 +299,11 @@ pub struct AesKey {
 
 impl AesKey {
     pub fn add_round_key(&self, state: &mut [[u8; 4]; 4], round: usize) {
-        for row in 0..4 {
+        (0..4).for_each(|row| {
             for col in 0..4 {
                 state[row][col] ^= self.round_keys[4 * round + col][row];
             }
-        }
+        });
     }
     pub fn num_rounds(&self) -> usize {
         use AesKeyStandard::*;
@@ -386,9 +423,9 @@ mod tests {
             key,
         };
 
-        let mut data = hex::decode("328831e0435a3137f6309807a88da234").unwrap();
+        let mut data = hex::decode("3243f6a8885a308d313198a2e0370734").unwrap();
         aes.encrypt_block(&mut data);
 
-        println!("{}", hex::encode(&data));
+        assert_eq!("3925841d02dc09fbdc118597196a0b32", hex::encode(&data));
     }
 }

@@ -7,6 +7,7 @@ pub enum Error {
     XorInconsistentLengths(usize, usize),
     XorEmptyKey,
     IncorrectKeyLength { expected: usize, actual: usize },
+    IncorrectInputLength(usize),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

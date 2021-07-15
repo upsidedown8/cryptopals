@@ -39,22 +39,28 @@ pub fn encode(bytes: &[u8]) -> String {
     result
 }
 pub fn decode(base64: &str) -> Result<Vec<u8>> {
-    if base64.len() % 4 != 0 {
-        return Err(Error::InvalidBase64Length(base64.len()));
-    }
-
     let mut base64_map = HashMap::new();
-
     (0..64).for_each(|i| {
         base64_map.insert(BASE64[i] as char, i as u32);
     });
 
-    let mut bytes = Vec::with_capacity((base64.len() + 1) * 4 / 3);
+    let len = base64
+        .chars()
+        .filter(|c| *c == '=' || base64_map.contains_key(c))
+        .count();
+
+    if len % 4 != 0 {
+        return Err(Error::InvalidBase64Length(len));
+    }
+
+    let mut bytes = Vec::with_capacity((len + 1) * 4 / 3);
 
     let mut buffer = 0;
     let mut bits = 0;
     for ch in base64.chars() {
-        if ch == '=' {
+        if ch.is_whitespace() {
+            continue;
+        } else if ch == '=' {
             break;
         } else if let Some(&v) = base64_map.get(&ch) {
             bits += 6;

@@ -14,26 +14,32 @@ pub fn encode(bytes: &[u8]) -> String {
     hex
 }
 pub fn decode(hex: &str) -> Result<Vec<u8>> {
-    if hex.len() % 2 != 0 {
-        return Err(Error::InvalidHexLength(hex.len()));
-    }
-
     let mut hex_map = HashMap::new();
-
-    for i in 0..16 {
+    (0..16).for_each(|i| {
         hex_map.insert(HEX_LOWER[i] as char, i as u8);
         hex_map.insert(HEX_UPPER[i] as char, i as u8);
+    });
+
+    let len = hex.chars().filter(|c| hex_map.contains_key(c)).count();
+
+    if len % 2 != 0 {
+        return Err(Error::InvalidHexLength(len));
     }
 
-    let mut bytes = Vec::with_capacity(hex.len() / 2);
+    let mut bytes = Vec::with_capacity(len / 2);
 
     let mut b = 0;
-    for (idx, ch) in hex.char_indices() {
-        if let Some(&v) = hex_map.get(&ch) {
+    let mut nibbles = 0;
+    for ch in hex.chars() {
+        if ch.is_whitespace() {
+            continue;
+        } else if let Some(&v) = hex_map.get(&ch) {
             b = (b << 4) | v;
+            nibbles += 1;
 
-            if idx % 2 != 0 {
+            if nibbles == 2 {
                 bytes.push(b);
+                nibbles = 0;
                 b = 0;
             }
         } else {
